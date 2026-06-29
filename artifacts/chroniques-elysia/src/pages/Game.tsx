@@ -268,6 +268,206 @@ function spawnParticles(particles: Particle[], x: number, y: number, color: stri
   }
 }
 
+// ─── Mini-map terrain colors ───────────────────────────────────────────────
+const MM_COLORS: Record<number, string> = {
+  0: "#2d5a1b", 1: "#1a4a6e", 2: "#777", 3: "#222",
+  4: "#0d2a07", 5: "#9e8840", 6: "#2a2030", 7: "#3d1010",
+};
+
+// ─── Draw Anaël (humanoid player sprite) ──────────────────────────────────
+function drawAnaël(
+  ctx: CanvasRenderingContext2D,
+  px: number, py: number,
+  facing: "up" | "down" | "left" | "right",
+  attacking: boolean,
+  invincible: number,
+) {
+  const flip = facing === "left";
+  ctx.save();
+  ctx.translate(px, py);
+  if (flip) ctx.scale(-1, 1);
+  ctx.globalAlpha = invincible > 0 ? (Math.floor(invincible / 4) % 2 === 0 ? 0.35 : 1.0) : 1.0;
+
+  const sx = facing === "up" ? -1 : 1; // shy mirroring for up view
+
+  // Shadow
+  ctx.fillStyle = "rgba(0,0,0,0.28)";
+  ctx.beginPath();
+  ctx.ellipse(0, 17, 11, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // ─ Boots ─
+  ctx.fillStyle = "#3a2010";
+  ctx.beginPath(); ctx.roundRect(-8, 11, 7, 5, 2); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(1, 11, 7, 5, 2); ctx.fill();
+
+  // ─ Legs / pants ─
+  ctx.fillStyle = facing === "up" ? "#5a5060" : "#6a6070";
+  ctx.fillRect(-7, 4, 5, 9);
+  ctx.fillRect(2, 4, 5, 9);
+
+  // ─ Hips / belt ─
+  ctx.fillStyle = "#4a3828";
+  ctx.fillRect(-8, 3, 16, 4);
+  // belt buckle
+  ctx.fillStyle = "#c0960a";
+  ctx.fillRect(-2, 4, 4, 2);
+
+  // ─ Torso / tunic ─
+  ctx.fillStyle = facing === "up" ? "#7a6858" : "#8a7060";
+  ctx.beginPath(); ctx.roundRect(-7, -8, 14, 13, 2); ctx.fill();
+
+  // Diagonal strap (left shoulder to right hip) — only for front-ish view
+  if (facing !== "up") {
+    ctx.strokeStyle = "#5a3820";
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-6, -7);
+    ctx.lineTo(4, 4);
+    ctx.stroke();
+  }
+
+  // Tunic collar / neck line
+  if (facing !== "up") {
+    ctx.fillStyle = "#c8a070";
+    ctx.beginPath(); ctx.roundRect(-2, -8, 4, 5, 1); ctx.fill();
+  }
+
+  // ─ Left shoulder pad ─
+  ctx.fillStyle = "#7a6858";
+  ctx.beginPath(); ctx.arc(-9, -6, 4.5, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = "#5a4840"; ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // ─ Left arm ─
+  ctx.fillStyle = "#c8a070";
+  ctx.fillRect(-13, -4, 4, 9);
+
+  // ─ Right shoulder pad ─
+  ctx.fillStyle = "#7a6858";
+  ctx.beginPath(); ctx.arc(9, -6, 4.5, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = "#5a4840"; ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // ─ Sword + right arm ─
+  const atkAngle = attacking ? -0.5 : 0.3;
+  const swordX = 10;
+  const swordY = -2;
+
+  ctx.save();
+  ctx.translate(swordX, swordY);
+  ctx.rotate(atkAngle);
+
+  // Right arm (holding sword)
+  ctx.fillStyle = "#c8a070";
+  ctx.fillRect(-2, 0, 4, 8);
+
+  // Pommel
+  ctx.fillStyle = "#806030";
+  ctx.beginPath(); ctx.arc(0, 14, 3, 0, Math.PI * 2); ctx.fill();
+
+  // Handle
+  ctx.fillStyle = "#9a6020";
+  ctx.fillRect(-2, 6, 4, 10);
+
+  // Crossguard
+  ctx.fillStyle = "#b08030";
+  ctx.beginPath(); ctx.roundRect(-7, 3, 14, 4, 1); ctx.fill();
+  ctx.strokeStyle = "#906010"; ctx.lineWidth = 0.5; ctx.stroke();
+
+  // Blade
+  const bladeGrad = ctx.createLinearGradient(-3, -28, 3, -28);
+  bladeGrad.addColorStop(0, "#e0e8f0");
+  bladeGrad.addColorStop(0.5, "#ffffff");
+  bladeGrad.addColorStop(1, "#a0b0c0");
+  ctx.fillStyle = bladeGrad;
+  ctx.beginPath();
+  ctx.moveTo(-2.5, 4);
+  ctx.lineTo(2.5, 4);
+  ctx.lineTo(1, -28);
+  ctx.lineTo(0, -32);
+  ctx.lineTo(-1, -28);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#8090a0"; ctx.lineWidth = 0.5; ctx.stroke();
+
+  // Blade shine
+  ctx.strokeStyle = "rgba(255,255,255,0.7)";
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(0.5, 2);
+  ctx.lineTo(-0.2, -26);
+  ctx.stroke();
+
+  ctx.restore();
+
+  // ─ Head ─
+  const headY = facing === "down" ? -16 : -15;
+
+  // Neck
+  ctx.fillStyle = "#c8a070";
+  ctx.fillRect(-2, -12, 4, 5);
+
+  // Head base
+  ctx.fillStyle = "#d4aa78";
+  ctx.beginPath(); ctx.arc(0, headY, 8, 0, Math.PI * 2); ctx.fill();
+
+  // Hair (light sandy/blonde)
+  ctx.fillStyle = "#c8a860";
+  if (facing === "up") {
+    // Show back of head - more hair
+    ctx.beginPath(); ctx.arc(0, headY, 8.5, Math.PI, 0, false); ctx.fill();
+    ctx.fillRect(-8, headY - 4, 16, 8);
+    // Hair strands at back
+    ctx.strokeStyle = "#b89850"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(-6, headY + 4); ctx.lineTo(-7, headY + 10); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, headY + 4); ctx.lineTo(0, headY + 10); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(6, headY + 4); ctx.lineTo(7, headY + 10); ctx.stroke();
+  } else {
+    // Front hair: covering top and slightly over sides
+    ctx.beginPath(); ctx.arc(0, headY, 8.5, Math.PI * 1.1, Math.PI * 0.0, false); ctx.fill();
+    ctx.fillRect(-9, headY - 5, 18, 7);
+    // Hair part / slightly messy strands
+    ctx.strokeStyle = "#b89850"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(-6, headY - 5); ctx.lineTo(-8, headY - 8); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-2, headY - 7); ctx.lineTo(-2, headY - 10); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(3, headY - 6); ctx.lineTo(5, headY - 9); ctx.stroke();
+    // Side hair bits
+    ctx.fillStyle = "#c8a860";
+    ctx.beginPath(); ctx.arc(-8, headY + 1, 3, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Face (only when not facing up)
+  if (facing !== "up") {
+    // Eyes
+    ctx.fillStyle = "#2a1a0a";
+    ctx.beginPath();
+    ctx.arc(-3, headY - 1, 1.5, 0, Math.PI * 2);
+    ctx.arc(3, headY - 1, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    // Eye shine
+    ctx.fillStyle = "rgba(255,255,255,0.8)";
+    ctx.beginPath();
+    ctx.arc(-2.5, headY - 1.5, 0.5, 0, Math.PI * 2);
+    ctx.arc(3.5, headY - 1.5, 0.5, 0, Math.PI * 2);
+    ctx.fill();
+    // Stern eyebrows
+    ctx.strokeStyle = "#7a5830"; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(-5, headY - 3.5); ctx.lineTo(-1.5, headY - 2.5); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(5, headY - 3.5); ctx.lineTo(1.5, headY - 2.5); ctx.stroke();
+    // Nose hint
+    ctx.fillStyle = "#b89060";
+    ctx.beginPath(); ctx.arc(0, headY + 2, 1, 0, Math.PI * 2); ctx.fill();
+    // Mouth (slight determination line)
+    ctx.strokeStyle = "#9a6840"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(-2, headY + 4.5); ctx.lineTo(2, headY + 4.5); ctx.stroke();
+  }
+
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
 function initState(save: SaveData | null): GameState {
   const map = generateMap();
   const basePlayer = {
@@ -555,6 +755,7 @@ export function Game() {
   const inputRef = useRef<InputState>({ dx: 0, dy: 0, attack: false, skill: false });
   const rafRef = useRef<number>(0);
   const frameRef = useRef<number>(0);
+  const minimapRef = useRef<HTMLCanvasElement | null>(null);
 
   const [showInventory, setShowInventory] = useState(false);
   const [hasSave, setHasSave] = useState(!!loadSave());
@@ -736,6 +937,20 @@ export function Game() {
     const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
     resize();
     window.addEventListener("resize", resize);
+
+    // Generate cached mini-map terrain bitmap once
+    const mmOff = document.createElement("canvas");
+    mmOff.width = MAP_COLS * 2;
+    mmOff.height = MAP_ROWS * 2;
+    const mmCtx = mmOff.getContext("2d")!;
+    const s0 = stateRef.current;
+    for (let r = 0; r < MAP_ROWS; r++) {
+      for (let c = 0; c < MAP_COLS; c++) {
+        mmCtx.fillStyle = MM_COLORS[s0.map[r][c]] ?? "#2d5a1b";
+        mmCtx.fillRect(c * 2, r * 2, 2, 2);
+      }
+    }
+    minimapRef.current = mmOff;
 
     const loop = () => {
       rafRef.current = requestAnimationFrame(loop);
@@ -1041,37 +1256,8 @@ export function Game() {
         ctx.fillText(b.enraged ? "SEIGNEUR OBLIVION ★" : "SEIGNEUR OBLIVION", b.x, lY);
       }
 
-      // Player
-      {
-        const px = p.x, py = p.y;
-        ctx.globalAlpha = p.invincible > 0 ? (Math.floor(p.invincible / 4) % 2 === 0 ? 0.4 : 1.0) : 1.0;
-        ctx.fillStyle = "rgba(0,0,0,0.3)";
-        ctx.beginPath(); ctx.ellipse(px, py + PLAYER_SIZE / 2 - 2, PLAYER_SIZE / 2 - 2, 5, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = "#1a3a8a";
-        ctx.beginPath();
-        if (p.facing === "right") { ctx.moveTo(px - 8, py - PLAYER_SIZE / 2 + 4); ctx.lineTo(px - 14, py + PLAYER_SIZE / 2); ctx.lineTo(px + 2, py + PLAYER_SIZE / 2); }
-        else if (p.facing === "left") { ctx.moveTo(px + 8, py - PLAYER_SIZE / 2 + 4); ctx.lineTo(px + 14, py + PLAYER_SIZE / 2); ctx.lineTo(px - 2, py + PLAYER_SIZE / 2); }
-        else { ctx.moveTo(px - 10, py - PLAYER_SIZE / 2 + 4); ctx.lineTo(px - 14, py + PLAYER_SIZE / 2 + 4); ctx.lineTo(px + 14, py + PLAYER_SIZE / 2 + 4); ctx.lineTo(px + 10, py - PLAYER_SIZE / 2 + 4); }
-        ctx.fill();
-        ctx.fillStyle = "#c0a050";
-        ctx.beginPath(); ctx.arc(px, py, PLAYER_SIZE / 2, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = "#a08038"; ctx.lineWidth = 2; ctx.stroke();
-        ctx.fillStyle = "#4a90e2"; ctx.beginPath(); ctx.arc(px, py + 2, 6, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = "#fff"; ctx.font = "bold 7px Arial"; ctx.textAlign = "center";
-        ctx.fillText("✦", px, py + 5);
-        ctx.fillStyle = "#e8c87a"; ctx.beginPath(); ctx.arc(px, py - PLAYER_SIZE / 2 + 4, 9, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = "#a08038"; ctx.fillRect(px - 9, py - PLAYER_SIZE / 2 - 2, 18, 5);
-        if (p.attackTimer > ATTACK_COOLDOWN * 0.5) {
-          const angle = p.facing === "right" ? 0.4 : p.facing === "left" ? Math.PI - 0.4 : p.facing === "down" ? Math.PI / 2 : -Math.PI / 2;
-          ctx.strokeStyle = "#e8e8e8"; ctx.lineWidth = 3; ctx.lineCap = "round";
-          ctx.beginPath();
-          ctx.moveTo(px + Math.cos(angle) * 10, py + Math.sin(angle) * 10);
-          ctx.lineTo(px + Math.cos(angle) * 42, py + Math.sin(angle) * 42);
-          ctx.stroke();
-          ctx.fillStyle = "#ffd700"; ctx.beginPath(); ctx.arc(px + Math.cos(angle) * 42, py + Math.sin(angle) * 42, 4, 0, Math.PI * 2); ctx.fill();
-        }
-        ctx.globalAlpha = 1.0;
-      }
+      // Player — humanoid Anaël sprite
+      drawAnaël(ctx, p.x, p.y, p.facing, p.attackTimer > ATTACK_COOLDOWN * 0.5, p.invincible);
 
       // Particles
       s.particles.forEach(pt => {
@@ -1092,6 +1278,68 @@ export function Game() {
       });
       ctx.globalAlpha = 1.0;
       ctx.restore();
+
+      // ── Mini-map ────────────────────────────────────────────────
+      {
+        const MW = 100, MH = 80;
+        const mx = Math.floor(W / 2 - MW / 2);
+        const my = H - MH - 52;
+        // Background
+        ctx.fillStyle = "rgba(0,0,0,0.72)";
+        ctx.beginPath();
+        ctx.roundRect(mx - 3, my - 14, MW + 6, MH + 17, 6);
+        ctx.fill();
+        ctx.strokeStyle = "rgba(255,215,0,0.35)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        // Label
+        ctx.fillStyle = "rgba(255,215,0,0.55)";
+        ctx.font = "bold 8px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("CARTE", mx + MW / 2, my - 3);
+        // Terrain: use cached minimap bitmap if available
+        if (minimapRef.current) {
+          ctx.drawImage(minimapRef.current, mx, my, MW, MH);
+        }
+        // Camera viewport rectangle
+        const camScaleX = MW / (MAP_COLS * TILE_SIZE);
+        const camScaleY = MH / (MAP_ROWS * TILE_SIZE);
+        ctx.strokeStyle = "rgba(255,255,255,0.25)";
+        ctx.lineWidth = 0.8;
+        ctx.strokeRect(
+          mx + s.camera.x * camScaleX,
+          my + s.camera.y * camScaleY,
+          W * camScaleX,
+          H * camScaleY,
+        );
+        // Enemies
+        ctx.fillStyle = "#ff4444";
+        s.enemies.forEach(en => {
+          if (en.dead) return;
+          const ex = mx + en.x * camScaleX;
+          const ey = my + en.y * camScaleY;
+          ctx.fillRect(ex - 1, ey - 1, 2.5, 2.5);
+        });
+        // Boss
+        if (s.boss && !s.boss.dead) {
+          ctx.fillStyle = "#cc00ff";
+          const bx = mx + s.boss.x * camScaleX;
+          const by = my + s.boss.y * camScaleY;
+          ctx.beginPath();
+          ctx.arc(bx, by, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        // Player dot
+        const ppx = mx + p.x * camScaleX;
+        const ppy = my + p.y * camScaleY;
+        ctx.fillStyle = "#ffffff";
+        ctx.beginPath();
+        ctx.arc(ppx, ppy, 2.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#ffd700";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
 
       // HUD update every 3 frames
       if (frameRef.current % 3 === 0) {
