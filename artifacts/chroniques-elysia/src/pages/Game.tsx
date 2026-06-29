@@ -28,6 +28,87 @@ const TILE_COLORS: Record<number, { fill: string; stroke: string }> = {
   [T.BOSS_FLOOR]:{ fill: "#3d1010", stroke: "#5a1818" },
 };
 
+// ─── NPC Data ───────────────────────────────────────────────────────────────
+interface NPCDef {
+  id: string;
+  name: string;
+  color: string;
+  hairColor: string;
+  x: number;
+  y: number;
+  dialogues: { before: string[]; after: string[] };
+}
+
+const NPC_DATA: NPCDef[] = [
+  {
+    id: "elara",
+    name: "Elara la Mage",
+    color: "#7c3aed",
+    hairColor: "#f0e0a0",
+    x: 2.5 * TILE_SIZE,
+    y: 19.5 * TILE_SIZE,
+    dialogues: {
+      before: [
+        "Anaël… je t'attendais. Le Seigneur Oblivion a corrompu ces terres depuis trop longtemps.",
+        "Sa forteresse se dresse à l'est, au-delà des plaines de sable et du donjon. Tu dois l'arrêter.",
+        "Sache qu'il entre en rage lorsqu'il est blessé. Frappe vite — et recule souvent.",
+        "Va, Anaël. Le destin d'Elysia repose entre tes mains. Les Chroniques te guideront.",
+      ],
+      after: [
+        "Tu as vaincu le Seigneur Oblivion ! La lumière revient enfin sur Elysia.",
+        "Les Chroniques d'Elysia raconteront ton nom pour l'éternité. Merci, héroïne.",
+      ],
+    },
+  },
+  {
+    id: "borin",
+    name: "Borin le Forgeron",
+    color: "#b45309",
+    hairColor: "#8b4513",
+    x: 7.5 * TILE_SIZE,
+    y: 24.5 * TILE_SIZE,
+    dialogues: {
+      before: [
+        "Hé, guerrière ! Voilà longtemps que je n'ai pas vu un visage aussi déterminé.",
+        "Conseil de vieux soldat : équipe-toi bien. Ouvre l'inventaire et utilise tes objets.",
+        "Les orques lâchent les meilleurs butins, mais ils frappent fort. Bonne chance !",
+      ],
+      after: [
+        "J'ai entendu que tu as terrassé Oblivion. Un travail de maître, vraiment.",
+        "Si jamais tu veux une lame forgée à ta mesure… reviens me voir !",
+      ],
+    },
+  },
+  {
+    id: "lira",
+    name: "Lira la Villageoise",
+    color: "#166534",
+    hairColor: "#d4a574",
+    x: 4.5 * TILE_SIZE,
+    y: 14.5 * TILE_SIZE,
+    dialogues: {
+      before: [
+        "S'il vous plaît… Oblivion a ravagé mon village. Je n'ai nulle part où aller.",
+        "La vieille Elara sait comment l'arrêter. Elle vit près du puits, à l'ouest.",
+        "Méfiez-vous des gobelins dans la forêt — ils attaquent sans prévenir !",
+      ],
+      after: [
+        "Vous avez sauvé Elysia ! Mon village pourra enfin se reconstruire.",
+        "Merci du fond du cœur, Anaël. Nous n'oublierons jamais ce que vous avez fait.",
+      ],
+    },
+  },
+];
+
+// Dialogue state type (used in React)
+type DialogueState = {
+  npcId: string;
+  npcName: string;
+  color: string;
+  lines: string[];
+  lineIdx: number;
+} | null;
+
 // ─── Items ─────────────────────────────────────────────────────────────────
 type ItemType = "weapon" | "armor" | "ring" | "potion" | "amulet";
 type ItemRarity = "commun" | "rare" | "épique" | "légendaire";
@@ -189,6 +270,7 @@ interface GameState {
   kills: number;
   gamePhase: "explore" | "boss" | "victory" | "dead";
   bossTriggered: boolean;
+  talkedToNpcs: string[];
   floatingTexts: { x: number; y: number; text: string; color: string; life: number }[];
 }
 interface InputState {
@@ -498,6 +580,7 @@ function initState(save: SaveData | null): GameState {
     kills: save ? save.kills : 0,
     gamePhase: "explore",
     bossTriggered: false,
+    talkedToNpcs: [],
     floatingTexts: [],
   };
 }
@@ -756,8 +839,15 @@ export function Game() {
   const rafRef = useRef<number>(0);
   const frameRef = useRef<number>(0);
   const minimapRef = useRef<HTMLCanvasElement | null>(null);
+  const nearNpcIdRef = useRef<string | null>(null);
+  const dialogueOpenRef = useRef(false);
+  const openDialogueRef = useRef<(() => void) | null>(null);
+  const advanceDialogueRef = useRef<(() => void) | null>(null);
 
   const [showInventory, setShowInventory] = useState(false);
+  const [dialogue, setDialogue] = useState<DialogueState>(null);
+  const [displayedText, setDisplayedText] = useState("");
+  const typewriterRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [hasSave, setHasSave] = useState(!!loadSave());
   const [hud, setHud] = useState(() => {
     const s = stateRef.current;
@@ -773,6 +863,8 @@ export function Game() {
       equippedWeapon: s.equippedWeapon,
       equippedArmor: s.equippedArmor,
       equippedRing: s.equippedRing,
+      nearNpcId: null as string | null,
+      questPhase: "none" as "none" | "active" | "done",
     };
   });
 
@@ -839,6 +931,10 @@ export function Game() {
     const keys = new Set<string>();
     const onDown = (e: KeyboardEvent) => {
       if (e.key === "i" || e.key === "I") { setShowInventory(v => !v); return; }
+      if (e.key === "e" || e.key === "E" || e.key === "Enter") {
+        if (dialogueOpenRef.current) { advanceDialogueRef.current?.(); return; }
+        if (nearNpcIdRef.current) { openDialogueRef.current?.(); return; }
+      }
       keys.add(e.key);
       let dx = 0, dy = 0;
       if (keys.has("ArrowLeft") || keys.has("a")) dx = -1;
@@ -864,6 +960,65 @@ export function Game() {
     window.addEventListener("keyup", onUp);
     return () => { window.removeEventListener("keydown", onDown); window.removeEventListener("keyup", onUp); };
   }, []);
+
+  // ─── Dialogue system ───────────────────────────────────────────────────
+  useEffect(() => {
+    if (typewriterRef.current) clearInterval(typewriterRef.current);
+    if (!dialogue) { setDisplayedText(""); return; }
+    const fullText = dialogue.lines[dialogue.lineIdx];
+    setDisplayedText("");
+    let idx = 0;
+    typewriterRef.current = setInterval(() => {
+      idx++;
+      setDisplayedText(fullText.slice(0, idx));
+      if (idx >= fullText.length) clearInterval(typewriterRef.current!);
+    }, 22);
+    return () => { if (typewriterRef.current) clearInterval(typewriterRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dialogue?.npcId, dialogue?.lineIdx]);
+
+  const openDialogue = useCallback(() => {
+    const id = nearNpcIdRef.current;
+    if (!id) return;
+    const npc = NPC_DATA.find(n => n.id === id)!;
+    const s = stateRef.current;
+    const phase = s.gamePhase === "victory" ? "after" : "before";
+    const lines = npc.dialogues[phase];
+    setDialogue({ npcId: id, npcName: npc.name, color: npc.color, lines, lineIdx: 0 });
+    dialogueOpenRef.current = true;
+  }, []);
+
+  const advanceDialogue = useCallback(() => {
+    // If typewriter is still running, skip to end
+    if (typewriterRef.current) {
+      clearInterval(typewriterRef.current);
+      typewriterRef.current = null;
+      setDialogue(prev => {
+        if (!prev) return null;
+        const full = prev.lines[prev.lineIdx];
+        setDisplayedText(full);
+        return prev;
+      });
+      return;
+    }
+    setDialogue(prev => {
+      if (!prev) return null;
+      const nextIdx = prev.lineIdx + 1;
+      if (nextIdx >= prev.lines.length) {
+        const s = stateRef.current;
+        if (!s.talkedToNpcs.includes(prev.npcId)) {
+          s.talkedToNpcs = [...s.talkedToNpcs, prev.npcId];
+        }
+        dialogueOpenRef.current = false;
+        return null;
+      }
+      return { ...prev, lineIdx: nextIdx };
+    });
+  }, []);
+
+  // Keep refs in sync so keyboard handler can call them
+  openDialogueRef.current = openDialogue;
+  advanceDialogueRef.current = advanceDialogue;
 
   // ─── Inventory actions ─────────────────────────────────────────────────
   const handleUseItem = useCallback((item: Item) => {
@@ -956,6 +1111,7 @@ export function Game() {
       rafRef.current = requestAnimationFrame(loop);
       frameRef.current++;
       const s = stateRef.current;
+      if (!s.talkedToNpcs) s.talkedToNpcs = [];
       const inp = inputRef.current;
       const W = canvas.width;
       const H = canvas.height;
@@ -993,6 +1149,12 @@ export function Game() {
         s.gamePhase = "boss";
       }
 
+      // NPC proximity detection
+      nearNpcIdRef.current = null;
+      NPC_DATA.forEach(npc => {
+        if (distance(p.x, p.y, npc.x, npc.y) < 55) nearNpcIdRef.current = npc.id;
+      });
+
       // Pick up dropped items
       s.droppedItems = s.droppedItems.filter(di => {
         if (distance(p.x, p.y, di.x, di.y) < 28) {
@@ -1009,7 +1171,7 @@ export function Game() {
 
       // ── Attack ─────────────────────────────────────────────────────
       const ATTACK_RANGE = 55, ATTACK_COOLDOWN = 22;
-      if (inp.attack && p.attackTimer === 0 && !paused) {
+      if (inp.attack && p.attackTimer === 0 && !paused && !dialogueOpenRef.current) {
         p.attackTimer = ATTACK_COOLDOWN;
         s.enemies.forEach(en => {
           if (en.dead) return;
@@ -1256,6 +1418,59 @@ export function Game() {
         ctx.fillText(b.enraged ? "SEIGNEUR OBLIVION ★" : "SEIGNEUR OBLIVION", b.x, lY);
       }
 
+      // NPCs
+      const npcBob = frameRef.current * 0.04;
+      NPC_DATA.forEach(npc => {
+        const { x: nx, y: ny, color, hairColor, name } = npc;
+        const talked = s.talkedToNpcs.includes(npc.id);
+        const near = nearNpcIdRef.current === npc.id;
+        // Shadow
+        ctx.fillStyle = "rgba(0,0,0,0.28)";
+        ctx.beginPath(); ctx.ellipse(nx, ny + 14, 9, 4, 0, 0, Math.PI * 2); ctx.fill();
+        // Body
+        ctx.fillStyle = color;
+        ctx.fillRect(nx - 8, ny - 5, 16, 20);
+        // Arms
+        ctx.fillRect(nx - 13, ny - 2, 6, 12);
+        ctx.fillRect(nx + 7, ny - 2, 6, 12);
+        // Head
+        ctx.fillStyle = "#f5d5a0";
+        ctx.beginPath(); ctx.arc(nx, ny - 16, 9, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = "#c8a060"; ctx.lineWidth = 1; ctx.stroke();
+        // Eyes
+        ctx.fillStyle = "#333";
+        ctx.fillRect(nx - 3, ny - 18, 2, 2);
+        ctx.fillRect(nx + 1, ny - 18, 2, 2);
+        // Hair
+        ctx.fillStyle = hairColor;
+        ctx.fillRect(nx - 9, ny - 25, 18, 8);
+        ctx.beginPath(); ctx.arc(nx, ny - 25, 9, Math.PI, 0); ctx.fill();
+        // Speech bubble
+        const bubY = Math.sin(npcBob) * 2.5;
+        ctx.fillStyle = near ? "#fffbe6" : talked ? "#dbeafe" : "#fef9c3";
+        ctx.strokeStyle = near ? "#fbbf24" : talked ? "#93c5fd" : "#a3a300";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(nx, ny - 36 + bubY, 9, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = "#111";
+        ctx.font = "bold 11px Arial"; ctx.textAlign = "center";
+        ctx.fillText(talked ? "?" : "!", nx, ny - 32 + bubY);
+        // Name plate
+        const plateW = 64;
+        ctx.fillStyle = "rgba(0,0,0,0.55)";
+        ctx.fillRect(nx - plateW / 2, ny - 54, plateW, 13);
+        ctx.fillStyle = color;
+        ctx.font = "bold 8px Arial"; ctx.textAlign = "center";
+        ctx.fillText(name, nx, ny - 44);
+        // Near highlight
+        if (near) {
+          ctx.strokeStyle = "rgba(255,220,50,0.6)";
+          ctx.lineWidth = 2;
+          ctx.setLineDash([4, 3]);
+          ctx.beginPath(); ctx.ellipse(nx, ny + 6, 16, 6, 0, 0, Math.PI * 2); ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      });
+
       // Player — humanoid Anaël sprite
       drawAnaël(ctx, p.x, p.y, p.facing, p.attackTimer > ATTACK_COOLDOWN * 0.5, p.invincible);
 
@@ -1357,6 +1572,10 @@ export function Game() {
           equippedWeapon: s.equippedWeapon,
           equippedArmor: s.equippedArmor,
           equippedRing: s.equippedRing,
+          nearNpcId: nearNpcIdRef.current,
+          questPhase: (s.talkedToNpcs.includes("elara")
+            ? (s.gamePhase === "victory" ? "done" : "active")
+            : "none") as "none" | "active" | "done",
         });
       }
     };
@@ -1435,6 +1654,25 @@ export function Game() {
             </button>
           </div>
 
+          {/* Quest indicator */}
+          {hud.questPhase !== "none" && (
+            <div style={{
+              position: "absolute", top: 10, left: "50%", transform: "translateX(-50%)",
+              background: hud.questPhase === "done" ? "rgba(0,80,30,0.88)" : "rgba(20,10,40,0.88)",
+              border: `1px solid ${hud.questPhase === "done" ? "rgba(0,200,80,0.6)" : "rgba(180,100,255,0.5)"}`,
+              borderRadius: 8, padding: "5px 14px",
+              color: hud.questPhase === "done" ? "#4ade80" : "#c084fc",
+              fontSize: 10, fontWeight: "bold",
+              display: "flex", alignItems: "center", gap: 6,
+              pointerEvents: "none",
+              backdropFilter: "blur(4px)",
+            }}>
+              {hud.questPhase === "done"
+                ? "✅ Quête accomplie — Oblivion vaincu !"
+                : "📜 Quête : Vaincre le Seigneur Oblivion"}
+            </div>
+          )}
+
           {/* Boss HP */}
           {hud.gamePhase === "boss" && hud.bossHp > 0 && (
             <div style={{
@@ -1455,6 +1693,89 @@ export function Game() {
               </div>
               <div style={{ color: "#ff8888", fontSize: 10, textAlign: "center", marginTop: 2 }}>
                 {Math.max(0, hud.bossHp)} / {hud.bossMaxHp}
+              </div>
+            </div>
+          )}
+
+          {/* PARLER button — appears when near NPC and no dialogue open */}
+          {hud.nearNpcId && !dialogue && (
+            <div style={{
+              position: "absolute", bottom: 180, left: "50%", transform: "translateX(-50%)",
+              background: "rgba(255,215,0,0.18)",
+              border: "1.5px solid rgba(255,215,0,0.7)",
+              borderRadius: 20, padding: "8px 20px",
+              color: "#fde68a", fontWeight: "bold", fontSize: 13,
+              display: "flex", alignItems: "center", gap: 8,
+              cursor: "pointer", userSelect: "none",
+              backdropFilter: "blur(6px)",
+              animation: "pulse 1.5s ease-in-out infinite",
+              boxShadow: "0 0 16px rgba(255,215,0,0.25)",
+            }}
+              onClick={openDialogue}
+            >
+              💬 PARLER &nbsp;<span style={{ fontSize: 9, opacity: 0.7 }}>[E]</span>
+            </div>
+          )}
+
+          {/* Dialogue box */}
+          {dialogue && (
+            <div style={{
+              position: "absolute",
+              bottom: 170,
+              left: "50%",
+              transform: "translateX(-50%)",
+              width: "min(500px, 92vw)",
+              background: "rgba(8,4,20,0.95)",
+              border: `2px solid ${dialogue.color}88`,
+              borderRadius: 12,
+              padding: "14px 18px 12px",
+              backdropFilter: "blur(8px)",
+              boxShadow: `0 0 30px ${dialogue.color}44`,
+            }}>
+              {/* Speaker name */}
+              <div style={{
+                color: dialogue.color,
+                fontWeight: "bold", fontSize: 12,
+                marginBottom: 8, letterSpacing: 1,
+                display: "flex", alignItems: "center", gap: 8,
+              }}>
+                <div style={{
+                  width: 10, height: 10, borderRadius: "50%",
+                  background: dialogue.color, flexShrink: 0,
+                  boxShadow: `0 0 8px ${dialogue.color}`,
+                }} />
+                {dialogue.npcName.toUpperCase()}
+                <span style={{ marginLeft: "auto", color: "rgba(255,255,255,0.35)", fontSize: 10, fontWeight: "normal" }}>
+                  {dialogue.lineIdx + 1} / {dialogue.lines.length}
+                </span>
+              </div>
+              {/* Text area */}
+              <div style={{
+                color: "#f0f0e8",
+                fontSize: 14,
+                lineHeight: 1.65,
+                minHeight: 48,
+                fontFamily: "Georgia, serif",
+              }}>
+                {displayedText}
+                <span style={{ opacity: 0.4, animation: "blink 0.8s step-end infinite" }}>▌</span>
+              </div>
+              {/* Advance / close button */}
+              <div style={{
+                display: "flex", justifyContent: "flex-end", marginTop: 10,
+              }}>
+                <button
+                  onClick={advanceDialogue}
+                  style={{
+                    background: `${dialogue.color}22`,
+                    border: `1px solid ${dialogue.color}66`,
+                    borderRadius: 8, padding: "5px 16px",
+                    color: dialogue.color, fontWeight: "bold", fontSize: 12,
+                    cursor: "pointer",
+                  }}
+                >
+                  {dialogue.lineIdx < dialogue.lines.length - 1 ? "Suivant ▶" : "Fermer ✕"}
+                </button>
               </div>
             </div>
           )}

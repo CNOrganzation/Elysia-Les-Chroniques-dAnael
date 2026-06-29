@@ -50,6 +50,16 @@
   --radius: 0.5rem;
 }
 
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: translateX(-50%) scale(1); }
+  50% { opacity: 0.75; transform: translateX(-50%) scale(1.04); }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0; }
+}
+
 @layer base {
   * {
     @apply border-border;
