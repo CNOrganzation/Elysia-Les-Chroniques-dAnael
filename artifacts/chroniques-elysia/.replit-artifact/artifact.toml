@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Chroniques d'Elysia"
+version = "1.0.0"
+id = "artifacts/chroniques-elysia"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18736
+
+[services.development]
+run = "pnpm --filter @workspace/chroniques-elysia run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/chroniques-elysia", "run", "build" ]
+publicDir = "artifacts/chroniques-elysia/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18736"
+BASE_PATH = "/"
