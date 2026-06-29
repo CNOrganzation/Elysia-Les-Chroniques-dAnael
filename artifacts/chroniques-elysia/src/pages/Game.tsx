@@ -151,6 +151,28 @@ const RARITY_COLOR: Record<ItemRarity, string> = {
   légendaire: "#ff8c00",
 };
 
+// ─── Shop items ─────────────────────────────────────────────────────────────
+interface ShopItem { item: Item; price: number }
+const SHOP_ITEMS: ShopItem[] = [
+  { item: ITEM_POOL.find(i => i.id === "sword1")!,  price: 50  },
+  { item: ITEM_POOL.find(i => i.id === "sword2")!,  price: 150 },
+  { item: ITEM_POOL.find(i => i.id === "armor1")!,  price: 80  },
+  { item: ITEM_POOL.find(i => i.id === "armor2")!,  price: 200 },
+  { item: ITEM_POOL.find(i => i.id === "ring1")!,   price: 60  },
+  { item: ITEM_POOL.find(i => i.id === "amulet1")!, price: 240 },
+  { item: ITEM_POOL.find(i => i.id === "potion1")!, price: 35  },
+  { item: ITEM_POOL.find(i => i.id === "potion2")!, price: 70  },
+];
+
+// ─── World map regions ────────────────────────────────────────────────────
+const WORLD_REGIONS = [
+  { name: "DISIA",  colStart: 0,  colEnd: 8,  color: "#1a3d0f", accent: "#4ade80", desc: "Région de départ — forêts ancestrales et prairies" },
+  { name: "ELARA",  colStart: 8,  colEnd: 16, color: "#5a4a10", accent: "#fbbf24", desc: "Plaines dorées et ruines de l'ancien royaume" },
+  { name: "ORI",    colStart: 16, colEnd: 22, color: "#2a3a5a", accent: "#60a5fa", desc: "Collines brumeuses et passages de pierre" },
+  { name: "INDA",   colStart: 22, colEnd: 28, color: "#2a1a3d", accent: "#c084fc", desc: "Donjon maudit — l'ombre d'Oblivion commence ici" },
+  { name: "MAJORA", colStart: 28, colEnd: 40, color: "#3d0a0a", accent: "#f87171", desc: "Capitale corrompue — repaire du Seigneur Oblivion" },
+];
+
 function rollDrop(enemyType: string): Item | null {
   const chance = enemyType === "orc" ? 0.35 : enemyType === "skeleton" ? 0.25 : 0.15;
   if (Math.random() > chance) return null;
@@ -178,6 +200,7 @@ interface SaveData {
   maxMp: number;
   attack: number;
   kills: number;
+  gold: number;
   inventory: Item[];
   equippedWeapon: Item | null;
   equippedArmor: Item | null;
@@ -253,7 +276,7 @@ interface DroppedItem {
 interface GameState {
   player: {
     x: number; y: number; hp: number; maxHp: number; mp: number; maxMp: number;
-    xp: number; xpNext: number; level: number; attack: number;
+    xp: number; xpNext: number; level: number; attack: number; gold: number;
     facing: "up" | "down" | "left" | "right";
     attackTimer: number; invincible: number; skillCooldown: number;
   };
@@ -562,6 +585,7 @@ function initState(save: SaveData | null): GameState {
     xpNext: save ? save.xpNext : 100,
     level: save ? save.level : 1,
     attack: save ? save.attack : 18,
+    gold: save ? (save.gold ?? 0) : 0,
     facing: "right" as const,
     attackTimer: 0, invincible: 0, skillCooldown: 0,
   };
@@ -594,6 +618,7 @@ function saveGame(s: GameState) {
     maxMp: s.player.maxMp,
     attack: s.player.attack,
     kills: s.kills,
+    gold: s.player.gold,
     inventory: s.inventory,
     equippedWeapon: s.equippedWeapon,
     equippedArmor: s.equippedArmor,
@@ -845,6 +870,8 @@ export function Game() {
   const advanceDialogueRef = useRef<(() => void) | null>(null);
 
   const [showInventory, setShowInventory] = useState(false);
+  const [showShop, setShowShop] = useState(false);
+  const [showWorldMap, setShowWorldMap] = useState(false);
   const [dialogue, setDialogue] = useState<DialogueState>(null);
   const [displayedText, setDisplayedText] = useState("");
   const typewriterRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -865,6 +892,7 @@ export function Game() {
       equippedRing: s.equippedRing,
       nearNpcId: null as string | null,
       questPhase: "none" as "none" | "active" | "done",
+      gold: 0,
     };
   });
 
@@ -1182,6 +1210,10 @@ export function Game() {
             if (en.hp <= 0) {
               en.dead = true; s.kills++;
               p.xp += en.type === "orc" ? 35 : en.type === "skeleton" ? 20 : 12;
+              const goldDrop = en.type === "orc" ? 10 + Math.floor(Math.random() * 11)
+                : en.type === "skeleton" ? 5 + Math.floor(Math.random() * 8) : 3 + Math.floor(Math.random() * 6);
+              p.gold += goldDrop;
+              s.floatingTexts.push({ x: en.x + 8, y: en.y - 35, text: `+${goldDrop}🪙`, color: "#ffd700", life: 55 });
               spawnParticles(s.particles, en.x, en.y, "#ffd700", 10);
               // Drop item
               const drop = rollDrop(en.type);
@@ -1205,6 +1237,8 @@ export function Game() {
             s.floatingTexts.push({ x: s.boss.x + (Math.random() - 0.5) * 40, y: s.boss.y - 30, text: `-${p.attack}`, color: "#ff4444", life: 50 });
             if (s.boss.hp <= 0) {
               s.boss.dead = true; s.gamePhase = "victory";
+              p.gold += 150;
+              s.floatingTexts.push({ x: s.boss.x, y: s.boss.y - 60, text: "+150🪙", color: "#ffd700", life: 100 });
               spawnParticles(s.particles, s.boss.x, s.boss.y, "#ffd700", 40);
               const bossDrops = rollBossDrop();
               bossDrops.forEach((bd, bi) => s.droppedItems.push({ item: bd, x: s.boss!.x + (bi - 0.5) * 60, y: s.boss!.y, bobOffset: bi }));
@@ -1573,6 +1607,7 @@ export function Game() {
           equippedArmor: s.equippedArmor,
           equippedRing: s.equippedRing,
           nearNpcId: nearNpcIdRef.current,
+          gold: s.player.gold,
           questPhase: (s.talkedToNpcs.includes("elara")
             ? (s.gamePhase === "victory" ? "done" : "active")
             : "none") as "none" | "active" | "done",
