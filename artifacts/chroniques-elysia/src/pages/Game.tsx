@@ -1111,6 +1111,18 @@ export function Game() {
     setHasSave(false);
   }, []);
 
+  const handleBuyItem = useCallback((shopItem: ShopItem) => {
+    const s = stateRef.current;
+    const p = s.player;
+    if (p.gold < shopItem.price) return;
+    if (s.inventory.length >= 24) return;
+    p.gold -= shopItem.price;
+    s.inventory.push({ ...shopItem.item, id: shopItem.item.id + "_bought_" + Date.now() });
+    s.floatingTexts.push({ x: p.x, y: p.y - 50, text: `+ ${shopItem.item.name}`, color: RARITY_COLOR[shopItem.item.rarity], life: 80 });
+    spawnParticles(s.particles, p.x, p.y, "#ffd700", 6);
+    saveGame(s);
+  }, []);
+
   // ─── Game loop ─────────────────────────────────────────────────────────
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1664,6 +1676,10 @@ export function Game() {
                 {i < 2 && <span style={{ color: i === 0 ? "#ff9999" : "#aabbff", fontSize: 9, minWidth: 40 }}>{Math.ceil(val)}/{max}</span>}
               </div>
             ))}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 4 }}>
+              <span style={{ fontSize: 10, width: 20 }}>🪙</span>
+              <span style={{ color: "#ffd700", fontWeight: "bold", fontSize: 11 }}>{hud.gold} or</span>
+            </div>
           </div>
 
           {/* Top-right: kills + inventory button */}
@@ -1734,21 +1750,38 @@ export function Game() {
 
           {/* PARLER button — appears when near NPC and no dialogue open */}
           {hud.nearNpcId && !dialogue && (
-            <div style={{
-              position: "absolute", bottom: 180, left: "50%", transform: "translateX(-50%)",
-              background: "rgba(255,215,0,0.18)",
-              border: "1.5px solid rgba(255,215,0,0.7)",
-              borderRadius: 20, padding: "8px 20px",
-              color: "#fde68a", fontWeight: "bold", fontSize: 13,
-              display: "flex", alignItems: "center", gap: 8,
-              cursor: "pointer", userSelect: "none",
-              backdropFilter: "blur(6px)",
-              animation: "pulse 1.5s ease-in-out infinite",
-              boxShadow: "0 0 16px rgba(255,215,0,0.25)",
-            }}
-              onClick={openDialogue}
-            >
-              💬 PARLER &nbsp;<span style={{ fontSize: 9, opacity: 0.7 }}>[E]</span>
+            <div style={{ position: "absolute", bottom: 180, left: "50%", transform: "translateX(-50%)", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+              <div style={{
+                background: "rgba(255,215,0,0.18)",
+                border: "1.5px solid rgba(255,215,0,0.7)",
+                borderRadius: 20, padding: "8px 20px",
+                color: "#fde68a", fontWeight: "bold", fontSize: 13,
+                display: "flex", alignItems: "center", gap: 8,
+                cursor: "pointer", userSelect: "none",
+                backdropFilter: "blur(6px)",
+                animation: "pulse 1.5s ease-in-out infinite",
+                boxShadow: "0 0 16px rgba(255,215,0,0.25)",
+              }}
+                onClick={openDialogue}
+              >
+                💬 PARLER &nbsp;<span style={{ fontSize: 9, opacity: 0.7 }}>[E]</span>
+              </div>
+              {hud.nearNpcId === "borin" && (
+                <div style={{
+                  background: "rgba(255,160,0,0.2)",
+                  border: "1.5px solid rgba(255,160,0,0.7)",
+                  borderRadius: 20, padding: "8px 20px",
+                  color: "#fbbf24", fontWeight: "bold", fontSize: 13,
+                  display: "flex", alignItems: "center", gap: 8,
+                  cursor: "pointer", userSelect: "none",
+                  backdropFilter: "blur(6px)",
+                  boxShadow: "0 0 16px rgba(255,160,0,0.25)",
+                }}
+                  onClick={() => { setShowShop(true); setShowInventory(false); }}
+                >
+                  🛒 BOUTIQUE &nbsp;<span style={{ fontSize: 9, opacity: 0.7 }}>🪙{hud.gold}</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -1892,6 +1925,153 @@ export function Game() {
             ZQSD·Espace·X·I(inventaire)  |  Tactile: Joystick + Boutons
           </div>
         </>
+      )}
+
+      {/* ── Mini-map click zone → world map ──────────────────────── */}
+      {hud.gamePhase !== "dead" && hud.gamePhase !== "victory" && !showWorldMap && (
+        <div
+          onClick={() => setShowWorldMap(true)}
+          title="Voir la carte du monde"
+          style={{
+            position: "absolute",
+            left: "50%", bottom: 80 + 52,
+            transform: "translateX(-50%)",
+            width: 100, height: 80,
+            cursor: "pointer",
+            borderRadius: 4,
+            background: "transparent",
+            zIndex: 10,
+          }}
+        />
+      )}
+
+      {/* ── World Map overlay ─────────────────────────────────────── */}
+      {showWorldMap && (
+        <div style={{
+          position: "absolute", inset: 0, zIndex: 100,
+          background: "rgba(4,2,12,0.96)",
+          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          backdropFilter: "blur(8px)",
+        }}>
+          <div style={{ color: "#ffd700", fontWeight: "bold", fontSize: 20, letterSpacing: 2, marginBottom: 16, textShadow: "0 0 20px rgba(255,215,0,0.6)" }}>
+            ✦ CARTE DU MONDE D'ÉLYSIA ✦
+          </div>
+          <div style={{ display: "flex", gap: 6, marginBottom: 20, width: "min(600px, 94vw)" }}>
+            {WORLD_REGIONS.map((r, ri) => {
+              const playerCol = stateRef.current.player.x / TILE_SIZE;
+              const isHere = playerCol >= r.colStart && playerCol < r.colEnd;
+              const width = `${((r.colEnd - r.colStart) / MAP_COLS) * 100}%`;
+              return (
+                <div key={ri} style={{
+                  width, flexShrink: 0, flexGrow: 0,
+                  background: r.color,
+                  border: `2px solid ${isHere ? r.accent : r.accent + "44"}`,
+                  borderRadius: 8, padding: "12px 6px",
+                  textAlign: "center",
+                  boxShadow: isHere ? `0 0 20px ${r.accent}88` : "none",
+                  position: "relative", transition: "all 0.2s",
+                }}>
+                  {isHere && (
+                    <div style={{ position: "absolute", top: -18, left: "50%", transform: "translateX(-50%)", color: r.accent, fontSize: 18, filter: `drop-shadow(0 0 6px ${r.accent})` }}>⬇</div>
+                  )}
+                  <div style={{ color: r.accent, fontWeight: "bold", fontSize: 11, letterSpacing: 1 }}>{r.name}</div>
+                  {isHere && <div style={{ color: r.accent, fontSize: 9, marginTop: 2 }}>📍 ICI</div>}
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "min(600px, 94vw)" }}>
+            {WORLD_REGIONS.map((r, ri) => {
+              const playerCol = stateRef.current.player.x / TILE_SIZE;
+              const isHere = playerCol >= r.colStart && playerCol < r.colEnd;
+              return (
+                <div key={ri} style={{
+                  display: "flex", alignItems: "center", gap: 12,
+                  background: isHere ? `${r.color}cc` : "rgba(255,255,255,0.04)",
+                  border: `1px solid ${isHere ? r.accent + "88" : "rgba(255,255,255,0.08)"}`,
+                  borderRadius: 8, padding: "8px 14px",
+                }}>
+                  <div style={{ width: 10, height: 10, borderRadius: "50%", background: r.accent, flexShrink: 0, boxShadow: `0 0 6px ${r.accent}` }} />
+                  <div style={{ color: r.accent, fontWeight: "bold", fontSize: 11, minWidth: 60 }}>{r.name}</div>
+                  <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 10 }}>{r.desc}</div>
+                  {isHere && <div style={{ marginLeft: "auto", color: r.accent, fontSize: 10, fontWeight: "bold", flexShrink: 0 }}>← VOUS ÊTES ICI</div>}
+                </div>
+              );
+            })}
+          </div>
+          <button
+            onClick={() => setShowWorldMap(false)}
+            style={{
+              marginTop: 24, padding: "10px 32px",
+              background: "rgba(255,215,0,0.12)", border: "1.5px solid rgba(255,215,0,0.5)",
+              borderRadius: 20, color: "#ffd700", fontWeight: "bold", fontSize: 13,
+              cursor: "pointer",
+            }}
+          >✕ Fermer</button>
+        </div>
+      )}
+
+      {/* ── Shop overlay ──────────────────────────────────────────── */}
+      {showShop && hud.gamePhase !== "dead" && hud.gamePhase !== "victory" && (
+        <div style={{
+          position: "absolute", inset: 0, zIndex: 100,
+          background: "rgba(4,2,12,0.96)",
+          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          backdropFilter: "blur(8px)",
+        }}>
+          <div style={{ color: "#fbbf24", fontWeight: "bold", fontSize: 18, letterSpacing: 2, marginBottom: 4, textShadow: "0 0 16px rgba(251,191,36,0.6)" }}>
+            ⚒ BORIN LE FORGERON
+          </div>
+          <div style={{ color: "rgba(255,255,255,0.45)", fontSize: 11, marginBottom: 16 }}>
+            Votre or : <span style={{ color: "#ffd700", fontWeight: "bold" }}>🪙 {hud.gold}</span>
+          </div>
+          <div style={{
+            display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10,
+            width: "min(520px, 92vw)", maxHeight: "55vh", overflowY: "auto",
+            paddingRight: 4,
+          }}>
+            {SHOP_ITEMS.map((si, idx) => {
+              const canAfford = hud.gold >= si.price;
+              const isFull = hud.inventory.length >= 24;
+              return (
+                <div
+                  key={idx}
+                  onClick={() => { if (canAfford && !isFull) { handleBuyItem(si); } }}
+                  style={{
+                    background: canAfford ? `${RARITY_COLOR[si.item.rarity]}11` : "rgba(60,60,60,0.3)",
+                    border: `1.5px solid ${canAfford ? RARITY_COLOR[si.item.rarity] + "66" : "rgba(100,100,100,0.3)"}`,
+                    borderRadius: 10, padding: "10px 12px",
+                    cursor: canAfford && !isFull ? "pointer" : "not-allowed",
+                    opacity: canAfford ? 1 : 0.55,
+                    display: "flex", flexDirection: "column", gap: 4,
+                    transition: "all 0.15s",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 20 }}>{si.item.emoji}</span>
+                    <div>
+                      <div style={{ color: RARITY_COLOR[si.item.rarity], fontWeight: "bold", fontSize: 11 }}>{si.item.name}</div>
+                      <div style={{ color: "rgba(255,255,255,0.4)", fontSize: 9, textTransform: "capitalize" }}>{si.item.rarity} · {si.item.type}</div>
+                    </div>
+                  </div>
+                  <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 9 }}>{si.item.description}</div>
+                  <div style={{ color: canAfford ? "#ffd700" : "#888", fontWeight: "bold", fontSize: 12, marginTop: 2 }}>
+                    🪙 {si.price}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <button
+            onClick={() => setShowShop(false)}
+            style={{
+              marginTop: 20, padding: "10px 32px",
+              background: "rgba(255,160,0,0.12)", border: "1.5px solid rgba(255,160,0,0.5)",
+              borderRadius: 20, color: "#fbbf24", fontWeight: "bold", fontSize: 13,
+              cursor: "pointer",
+            }}
+          >✕ Fermer la boutique</button>
+        </div>
       )}
 
       {/* ── Inventory overlay ─────────────────────────────────────── */}
